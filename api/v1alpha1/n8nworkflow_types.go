@@ -21,9 +21,32 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// SyncPolicy defines how the operator syncs workflows with n8n
+// +kubebuilder:validation:Enum=Always;CreateOnly;Manual
+type SyncPolicy string
+
+const (
+	// SyncPolicyAlways continuously syncs the workflow to n8n (default)
+	// UI changes will be overwritten on each reconciliation
+	SyncPolicyAlways SyncPolicy = "Always"
+
+	// SyncPolicyCreateOnly only creates the workflow, never updates
+	// Allows manual editing in the n8n UI without being overwritten
+	SyncPolicyCreateOnly SyncPolicy = "CreateOnly"
+
+	// SyncPolicyManual pauses all sync operations
+	// Useful during active development in the UI
+	SyncPolicyManual SyncPolicy = "Manual"
+)
+
 // N8nRef references the n8n instance to sync workflows to
 type N8nRef struct {
-	// Name of the n8n service
+	// URL is the full base URL of the n8n instance API (e.g., "http://n8n.example.com:5678")
+	// If specified, this takes precedence over Name/Namespace/Port
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// Name of the n8n service (used to construct URL if URL is not specified)
 	// +kubebuilder:default=n8n-service
 	// +optional
 	Name string `json:"name,omitempty"`
@@ -91,6 +114,14 @@ type N8nWorkflowSpec struct {
 	// +optional
 	N8nRef *N8nRef `json:"n8nRef,omitempty"`
 
+	// SyncPolicy defines how the operator handles synchronization with n8n
+	// - Always: Continuously sync, overwriting UI changes (default)
+	// - CreateOnly: Create workflow but never update, allowing UI edits
+	// - Manual: Pause all sync operations
+	// +kubebuilder:default=Always
+	// +optional
+	SyncPolicy SyncPolicy `json:"syncPolicy,omitempty"`
+
 	// Whether the workflow should be active
 	// +kubebuilder:default=true
 	// +optional
@@ -155,6 +186,7 @@ const (
 // +kubebuilder:resource:shortName=n8nwf;wf
 // +kubebuilder:printcolumn:name="Workflow Name",type=string,JSONPath=`.spec.workflow.name`
 // +kubebuilder:printcolumn:name="Active",type=boolean,JSONPath=`.status.active`
+// +kubebuilder:printcolumn:name="Sync Policy",type=string,JSONPath=`.spec.syncPolicy`
 // +kubebuilder:printcolumn:name="Workflow ID",type=string,JSONPath=`.status.workflowId`
 // +kubebuilder:printcolumn:name="Last Sync",type=date,JSONPath=`.status.lastSyncTime`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

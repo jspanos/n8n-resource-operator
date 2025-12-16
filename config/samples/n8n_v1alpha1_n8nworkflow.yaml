@@ -7,20 +7,38 @@ metadata:
   name: simple-webhook
   namespace: n8n
 spec:
-  active: true
+  # n8n instance configuration (choose one approach)
   n8nRef:
+    # Option 1: Direct URL (recommended for external n8n instances)
+    # url: "https://n8n.example.com"
+
+    # Option 2: Kubernetes service discovery
     name: n8n-service
     namespace: n8n
+    port: 5678
+
+    # API key secret reference (required)
     secretRef:
       name: n8n-api-key
       key: api-key
+
+  # Sync policy controls how the operator handles changes
+  # - Always: Continuously sync, overwriting UI changes (default)
+  # - CreateOnly: Create once, then allow UI editing
+  # - Manual: Pause all sync operations
+  syncPolicy: Always
+
+  # Whether the workflow should be active in n8n
+  active: true
+
+  # The workflow definition
   workflow:
     name: "Simple Webhook"
     nodes:
       - id: "webhook-1"
         name: "Webhook"
         type: "n8n-nodes-base.webhook"
-        typeVersion: 1
+        typeVersion: 2
         parameters:
           httpMethod: "POST"
           path: "simple"

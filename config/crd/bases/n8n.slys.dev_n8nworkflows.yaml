@@ -24,6 +24,9 @@ spec:
     - jsonPath: .status.active
       name: Active
       type: boolean
+    - jsonPath: .spec.syncPolicy
+      name: Sync Policy
+      type: string
     - jsonPath: .status.workflowId
       name: Workflow ID
       type: string
@@ -67,7 +70,8 @@ spec:
                 properties:
                   name:
                     default: n8n-service
-                    description: Name of the n8n service
+                    description: Name of the n8n service (used to construct URL if
+                      URL is not specified)
                     type: string
                   namespace:
                     description: Namespace of the n8n service. Defaults to the workflow's
@@ -91,7 +95,24 @@ spec:
                     required:
                     - name
                     type: object
+                  url:
+                    description: |-
+                      URL is the full base URL of the n8n instance API (e.g., "http://n8n.example.com:5678")
+                      If specified, this takes precedence over Name/Namespace/Port
+                    type: string
                 type: object
+              syncPolicy:
+                default: Always
+                description: |-
+                  SyncPolicy defines how the operator handles synchronization with n8n
+                  - Always: Continuously sync, overwriting UI changes (default)
+                  - CreateOnly: Create workflow but never update, allowing UI edits
+                  - Manual: Pause all sync operations
+                enum:
+                - Always
+                - CreateOnly
+                - Manual
+                type: string
               workflow:
                 description: The n8n workflow definition
                 properties:

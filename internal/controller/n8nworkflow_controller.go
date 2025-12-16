@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -120,26 +121,36 @@ func (r *N8nWorkflowReconciler) getN8nClient(ctx context.Context, workflow *n8nv
 
 	// Determine n8n URL
 	if workflow.Spec.N8nRef != nil {
-		namespace := workflow.Spec.N8nRef.Namespace
-		if namespace == "" {
-			namespace = workflow.Namespace
+		// Use explicit URL if specified (takes precedence)
+		if workflow.Spec.N8nRef.URL != "" {
+			baseURL = workflow.Spec.N8nRef.URL
+		} else {
+			// Construct URL from service reference
+			namespace := workflow.Spec.N8nRef.Namespace
+			if namespace == "" {
+				namespace = workflow.Namespace
+			}
+			name := workflow.Spec.N8nRef.Name
+			if name == "" {
+				name = "n8n-service"
+			}
+			port := workflow.Spec.N8nRef.Port
+			if port == 0 {
+				port = 5678
+			}
+			baseURL = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, namespace, port)
 		}
-		name := workflow.Spec.N8nRef.Name
-		if name == "" {
-			name = "n8n-service"
-		}
-		port := workflow.Spec.N8nRef.Port
-		if port == 0 {
-			port = 5678
-		}
-		baseURL = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, namespace, port)
 
 		// Get API key from secret if specified
 		if workflow.Spec.N8nRef.SecretRef != nil {
+			secretNamespace := workflow.Spec.N8nRef.Namespace
+			if secretNamespace == "" {
+				secretNamespace = workflow.Namespace
+			}
 			secret := &corev1.Secret{}
 			secretKey := types.NamespacedName{
 				Name:      workflow.Spec.N8nRef.SecretRef.Name,
-				Namespace: namespace,
+				Namespace: secretNamespace,
 			}
 			if err := r.Get(ctx, secretKey, secret); err != nil {
 				return nil, fmt.Errorf("failed to get API key secret: %w", err)
@@ -156,14 +167,11 @@ func (r *N8nWorkflowReconciler) getN8nClient(ctx context.Context, workflow *n8nv
 		}
 	}
 
-	// Fall back to defaults
+	// Fall back to defaults from environment/config
 	if baseURL == "" {
 		baseURL = r.DefaultN8nURL
 		if baseURL == "" {
 			baseURL = os.Getenv("N8N_API_URL")
-			if baseURL == "" {
-				baseURL = "http://n8n-service.n8n.svc.cluster.local:5678"
-			}
 		}
 	}
 	if apiKey == "" {
@@ -173,8 +181,12 @@ func (r *N8nWorkflowReconciler) getN8nClient(ctx context.Context, workflow *n8nv
 		}
 	}
 
+	// Validate required configuration
+	if baseURL == "" {
+		return nil, fmt.Errorf("no n8n URL configured: specify n8nRef.url, n8nRef.name/namespace/port, or set N8N_API_URL environment variable")
+	}
 	if apiKey == "" {
-		return nil, fmt.Errorf("no n8n API key configured")
+		return nil, fmt.Errorf("no n8n API key configured: specify n8nRef.secretRef or set N8N_API_KEY environment variable")
 	}
 
 	return n8n.NewClient(baseURL, apiKey), nil
@@ -183,6 +195,23 @@ func (r *N8nWorkflowReconciler) getN8nClient(ctx context.Context, workflow *n8nv
 // reconcileWorkflow syncs the workflow to n8n
 func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow *n8nv1alpha1.N8nWorkflow, n8nClient *n8n.Client) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+
+	// Get effective sync policy (default to Always)
+	syncPolicy := workflow.Spec.SyncPolicy
+	if syncPolicy == "" {
+		syncPolicy = n8nv1alpha1.SyncPolicyAlways
+	}
+
+	// Handle Manual sync policy - skip all sync operations
+	if syncPolicy == n8nv1alpha1.SyncPolicyManual {
+		log.Info("SyncPolicy is Manual, skipping reconciliation")
+		r.setCondition(workflow, n8nv1alpha1.ConditionTypeReady, metav1.ConditionTrue,
+			"SyncPaused", "Sync is paused (syncPolicy: Manual)")
+		if statusErr := r.Status().Update(ctx, workflow); statusErr != nil {
+			log.Error(statusErr, "Failed to update status")
+		}
+		return ctrl.Result{RequeueAfter: defaultRequeueInterval}, nil
+	}
 
 	// Convert CRD workflow spec to n8n workflow
 	n8nWorkflow, err := r.convertToN8nWorkflow(workflow)
@@ -240,25 +269,32 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 		r.Recorder.Event(workflow, corev1.EventTypeNormal, "Created", fmt.Sprintf("Workflow created with ID %s", created.ID))
 		existingWorkflow = created
 	} else {
-		// Update existing workflow
-		log.Info("Updating workflow in n8n", "id", existingWorkflow.ID, "name", workflow.Spec.Workflow.Name)
+		// Workflow exists - check sync policy before updating
 		workflow.Status.WorkflowID = existingWorkflow.ID
 
-		// Check if update is needed
-		if r.needsUpdate(existingWorkflow, n8nWorkflow) {
-			updated, err := n8nClient.UpdateWorkflow(ctx, existingWorkflow.ID, n8nWorkflow)
-			if err != nil {
-				log.Error(err, "Failed to update workflow")
-				r.setCondition(workflow, n8nv1alpha1.ConditionTypeReady, metav1.ConditionFalse,
-					n8nv1alpha1.ReasonSyncFailed, fmt.Sprintf("Failed to update workflow: %v", err))
-				r.Recorder.Event(workflow, corev1.EventTypeWarning, "UpdateFailed", err.Error())
-				if statusErr := r.Status().Update(ctx, workflow); statusErr != nil {
-					log.Error(statusErr, "Failed to update status")
+		if syncPolicy == n8nv1alpha1.SyncPolicyCreateOnly {
+			// CreateOnly: Don't update, just track the workflow
+			log.Info("SyncPolicy is CreateOnly, skipping update", "id", existingWorkflow.ID)
+		} else {
+			// Always: Update the workflow
+			log.Info("Updating workflow in n8n", "id", existingWorkflow.ID, "name", workflow.Spec.Workflow.Name)
+
+			// Check if update is needed
+			if r.needsUpdate(existingWorkflow, n8nWorkflow) {
+				updated, err := n8nClient.UpdateWorkflow(ctx, existingWorkflow.ID, n8nWorkflow)
+				if err != nil {
+					log.Error(err, "Failed to update workflow")
+					r.setCondition(workflow, n8nv1alpha1.ConditionTypeReady, metav1.ConditionFalse,
+						n8nv1alpha1.ReasonSyncFailed, fmt.Sprintf("Failed to update workflow: %v", err))
+					r.Recorder.Event(workflow, corev1.EventTypeWarning, "UpdateFailed", err.Error())
+					if statusErr := r.Status().Update(ctx, workflow); statusErr != nil {
+						log.Error(statusErr, "Failed to update status")
+					}
+					return ctrl.Result{RequeueAfter: errorRequeueInterval}, err
 				}
-				return ctrl.Result{RequeueAfter: errorRequeueInterval}, err
+				r.Recorder.Event(workflow, corev1.EventTypeNormal, "Updated", "Workflow updated successfully")
+				existingWorkflow = updated
 			}
-			r.Recorder.Event(workflow, corev1.EventTypeNormal, "Updated", "Workflow updated successfully")
-			existingWorkflow = updated
 		}
 	}
 
@@ -336,11 +372,15 @@ func (r *N8nWorkflowReconciler) handleDeletion(ctx context.Context, workflow *n8
 		log.Info("Deleting workflow from n8n", "id", workflow.Status.WorkflowID)
 		err := n8nClient.DeleteWorkflow(ctx, workflow.Status.WorkflowID)
 		if err != nil {
-			// Log the error but continue with finalizer removal
-			// The workflow might have been manually deleted from n8n
-			log.Error(err, "Failed to delete workflow from n8n (may have been already deleted)")
-			r.Recorder.Event(workflow, corev1.EventTypeWarning, "DeleteFailed",
-				fmt.Sprintf("Failed to delete workflow from n8n: %v", err))
+			// Check if the workflow was already deleted (not found is acceptable)
+			if strings.Contains(err.Error(), "Not Found") || strings.Contains(err.Error(), "not found") {
+				log.Info("Workflow already deleted from n8n", "id", workflow.Status.WorkflowID)
+			} else {
+				// Log as warning but continue with finalizer removal
+				log.Info("Failed to delete workflow from n8n (continuing with cleanup)", "error", err)
+				r.Recorder.Event(workflow, corev1.EventTypeWarning, "DeleteFailed",
+					fmt.Sprintf("Failed to delete workflow from n8n: %v", err))
+			}
 		} else {
 			r.Recorder.Event(workflow, corev1.EventTypeNormal, "Deleted", "Workflow deleted from n8n")
 		}
