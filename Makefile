@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= registry.registry.svc.cluster.local:5000/n8n-resource-operator:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -65,7 +65,7 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # CertManager is installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
-KIND_CLUSTER ?= n8n-workflow-operator-test-e2e
+KIND_CLUSTER ?= n8n-resource-operator-test-e2e
 
 .PHONY: setup-test-e2e
 setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
@@ -134,10 +134,10 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name n8n-workflow-operator-builder
-	$(CONTAINER_TOOL) buildx use n8n-workflow-operator-builder
+	- $(CONTAINER_TOOL) buildx create --name n8n-resource-operator-builder
+	$(CONTAINER_TOOL) buildx use n8n-resource-operator-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
-	- $(CONTAINER_TOOL) buildx rm n8n-workflow-operator-builder
+	- $(CONTAINER_TOOL) buildx rm n8n-resource-operator-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer
@@ -248,3 +248,53 @@ endef
 define gomodver
 $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
 endef
+
+##@ Helm
+
+# Helm configuration
+CHART_VERSION ?= 0.1.0
+CHART_DIR = charts/n8n-resource-operator
+CHART_PACKAGE = n8n-resource-operator-$(CHART_VERSION).tgz
+REGISTRY ?= registry.registry.svc.cluster.local:5000
+
+.PHONY: helm-lint
+helm-lint: ## Lint the Helm chart
+	helm lint $(CHART_DIR)
+
+.PHONY: helm-template
+helm-template: ## Render Helm chart templates locally
+	helm template n8n-resource-operator $(CHART_DIR) --namespace n8n-resource-operator
+
+.PHONY: helm-package
+helm-package: helm-lint ## Package the Helm chart
+	helm package $(CHART_DIR) --version $(CHART_VERSION) --app-version $(CHART_VERSION)
+
+.PHONY: helm-push
+helm-push: helm-package ## Push Helm chart to OCI registry
+	helm push $(CHART_PACKAGE) oci://$(REGISTRY)/charts
+
+.PHONY: helm-install
+helm-install: ## Install Helm chart to cluster
+	helm upgrade --install n8n-resource-operator $(CHART_DIR) \
+		--namespace n8n-resource-operator \
+		--create-namespace \
+		--set image.repository=$(REGISTRY)/n8n-resource-operator \
+		--set image.tag=$(CHART_VERSION)
+
+.PHONY: helm-uninstall
+helm-uninstall: ## Uninstall Helm chart from cluster
+	helm uninstall n8n-resource-operator --namespace n8n-resource-operator
+
+##@ Release
+
+.PHONY: release
+release: docker-build docker-push helm-push ## Build and push both Docker image and Helm chart
+	@echo "Released n8n-resource-operator:$(CHART_VERSION) and chart version $(CHART_VERSION)"
+
+.PHONY: release-local
+release-local: ## Build and push to local registry
+	$(CONTAINER_TOOL) build -t $(REGISTRY)/n8n-resource-operator:$(CHART_VERSION) .
+	$(CONTAINER_TOOL) push $(REGISTRY)/n8n-resource-operator:$(CHART_VERSION)
+	helm package $(CHART_DIR) --version $(CHART_VERSION) --app-version $(CHART_VERSION)
+	helm push $(CHART_PACKAGE) oci://$(REGISTRY)/charts
+	@echo "Released to local registry: $(REGISTRY)"

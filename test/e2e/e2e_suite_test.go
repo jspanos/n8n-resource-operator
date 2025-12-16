@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lifenautjoe/n8n-workflow-operator/test/utils"
+	"github.com/jspanos/n8n-resource-operator/test/utils"
 )
 
 var (
@@ -42,7 +42,7 @@ var (
 
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
-	projectImage = "example.com/n8n-workflow-operator:v0.0.1"
+	projectImage = "example.com/n8n-resource-operator:v0.0.1"
 )
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
@@ -51,7 +51,7 @@ var (
 // CertManager.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting n8n-workflow-operator integration test suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting n8n-resource-operator integration test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 

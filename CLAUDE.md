@@ -29,7 +29,7 @@ Create an operator that:
 │                    Kubernetes Cluster                        │
 │                                                              │
 │  ┌──────────────────┐     ┌──────────────────────────────┐ │
-│  │  FluxCD          │     │  n8n-workflow-operator       │ │
+│  │  FluxCD          │     │  n8n-resource-operator       │ │
 │  │  ┌────────────┐  │     │  ┌─────────────────────────┐ │ │
 │  │  │ Git Repo   │──┼────▶│  │ Controller              │ │ │
 │  │  │ (workflows)│  │     │  │ - Watch N8nWorkflow CRs │ │ │
@@ -275,7 +275,7 @@ func (c *N8nClient) ActivateWorkflow(id string) error {
 ```
 kubernetes/
 ├── apps/
-│   └── n8n-workflow-operator/
+│   └── n8n-resource-operator/
 │       ├── kustomization.yaml
 │       └── deployment.yaml
 ├── infrastructure/
@@ -287,7 +287,7 @@ kubernetes/
 │       │   └── youtube-to-gif.yaml        # N8nWorkflow CR
 │       └── api-key-sealed.yaml            # Sealed secret for API key
 └── crds/
-    └── n8n-workflow-operator/
+    └── n8n-resource-operator/
         └── n8n.slys.dev_n8nworkflows.yaml
 ```
 
@@ -360,10 +360,10 @@ make manifests
 make build
 
 # Build Docker image
-make docker-build IMG=ghcr.io/lifenautjoe/n8n-workflow-operator:latest
+make docker-build IMG=ghcr.io/jspanos/n8n-resource-operator:latest
 
 # Deploy to cluster
-make deploy IMG=ghcr.io/lifenautjoe/n8n-workflow-operator:latest
+make deploy IMG=ghcr.io/jspanos/n8n-resource-operator:latest
 
 # Run locally (for development)
 make run
@@ -390,7 +390,7 @@ Consider creating a Helm chart for easier distribution.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: n8n-workflow-operator
+  name: n8n-resource-operator
 rules:
   - apiGroups: ["n8n.slys.dev"]
     resources: ["n8nworkflows", "n8nworkflows/status"]
@@ -426,7 +426,7 @@ The operator will be deployed to a Kubernetes cluster managed by FluxCD:
 
 ```bash
 # Initialize operator project
-kubebuilder init --domain slys.dev --repo github.com/lifenautjoe/n8n-workflow-operator
+kubebuilder init --domain slys.dev --repo github.com/jspanos/n8n-resource-operator
 
 # Create API
 kubebuilder create api --group n8n --version v1alpha1 --kind N8nWorkflow
@@ -442,5 +442,5 @@ make manifests
 make test
 
 # Build and push
-make docker-build docker-push IMG=ghcr.io/lifenautjoe/n8n-workflow-operator:v0.1.0
+make docker-build docker-push IMG=ghcr.io/jspanos/n8n-resource-operator:v0.1.0
 ```

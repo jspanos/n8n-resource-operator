@@ -6,8 +6,8 @@ cliVersion: 4.10.1
 domain: slys.dev
 layout:
 - go.kubebuilder.io/v4
-projectName: n8n-workflow-operator
-repo: github.com/lifenautjoe/n8n-workflow-operator
+projectName: n8n-resource-operator
+repo: github.com/jspanos/n8n-resource-operator
 resources:
 - api:
     crdVersion: v1
@@ -16,6 +16,6 @@ resources:
   domain: slys.dev
   group: n8n
   kind: N8nWorkflow
-  path: github.com/lifenautjoe/n8n-workflow-operator/api/v1alpha1
+  path: github.com/jspanos/n8n-resource-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

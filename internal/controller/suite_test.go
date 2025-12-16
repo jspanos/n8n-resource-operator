@@ -32,7 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	n8nv1alpha1 "github.com/lifenautjoe/n8n-workflow-operator/api/v1alpha1"
+	n8nv1alpha1 "github.com/jspanos/n8n-resource-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

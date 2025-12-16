@@ -1,0 +1,54 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
+  $ helm get all {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+The n8n-resource-operator is now running. To create your first workflow:
+
+1. Create a secret with your n8n API key (if not already done):
+
+   kubectl create secret generic n8n-api-key \
+     --from-literal=api-key=YOUR_N8N_API_KEY \
+     -n {{ .Release.Namespace }}
+
+2. Create an N8nWorkflow resource:
+
+   cat <<EOF | kubectl apply -f -
+   apiVersion: n8n.slys.dev/v1alpha1
+   kind: N8nWorkflow
+   metadata:
+     name: my-workflow
+     namespace: n8n
+   spec:
+     active: true
+     n8nRef:
+       name: n8n-service
+       namespace: n8n
+       secretRef:
+         name: n8n-api-key
+         key: api-key
+     workflow:
+       name: "My Workflow"
+       nodes:
+         - id: "webhook"
+           name: "Webhook"
+           type: "n8n-nodes-base.webhook"
+           parameters:
+             httpMethod: "POST"
+             path: "my-endpoint"
+           position: [0, 0]
+       connections: {}
+       settings:
+         executionOrder: "v1"
+   EOF
+
+3. Check the status:
+
+   kubectl get n8nworkflows -A
+
+For more information, visit:
+  https://github.com/jspanos/n8n-resource-operator

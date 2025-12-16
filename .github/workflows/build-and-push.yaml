@@ -1,0 +1,123 @@
+name: Build and Push
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - master
+      - main
+
+env:
+  REGISTRY: registry.registry.svc.cluster.local:5000
+  IMAGE_NAME: n8n-resource-operator
+  CHART_NAME: n8n-resource-operator
+
+jobs:
+  test:
+    runs-on: arc-runner-n8n-resource-operator
+    container:
+      image: golang:1.23-alpine
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git make bash
+
+      - name: Checkout code
+        run: |
+          git clone --depth 1 --branch ${GITHUB_REF_NAME} \
+            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+      - name: Run tests
+        run: |
+          go mod tidy
+          go test ./internal/... -v
+
+  build-and-push:
+    runs-on: arc-runner-n8n-resource-operator
+    needs: test
+    container:
+      image: gcr.io/kaniko-project/executor:v1.23.2-debug
+    steps:
+      - name: Checkout code
+        run: |
+          wget -q -O repo.tar.gz \
+            "https://api.github.com/repos/${{ github.repository }}/tarball/${{ github.ref_name }}" \
+            --header="Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"
+          mkdir -p src
+          tar -xzf repo.tar.gz --strip-components=1 -C src
+          rm repo.tar.gz
+        shell: sh
+
+      - name: Set up version
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+        shell: sh
+
+      - name: Build and push image with kaniko
+        run: |
+          /kaniko/executor \
+            --context="src" \
+            --dockerfile="src/Dockerfile" \
+            --destination="${REGISTRY}/${IMAGE_NAME}:${{ steps.version.outputs.version }}" \
+            --destination="${REGISTRY}/${IMAGE_NAME}:${{ github.sha }}" \
+            --insecure \
+            --skip-tls-verify
+        shell: sh
+        if: startsWith(github.ref, 'refs/tags/')
+
+      - name: Build image (PR - no push)
+        run: |
+          /kaniko/executor \
+            --context="src" \
+            --dockerfile="src/Dockerfile" \
+            --no-push
+        shell: sh
+        if: github.event_name == 'pull_request'
+
+  helm:
+    runs-on: arc-runner-n8n-resource-operator
+    needs: test
+    container:
+      image: alpine/helm:3.14.0
+    steps:
+      - name: Install git
+        run: apk add --no-cache git
+
+      - name: Checkout code
+        run: |
+          git clone --depth 1 --branch ${GITHUB_REF_NAME} \
+            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+      - name: Set up version
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Chart version: ${VERSION}"
+
+      - name: Lint Helm chart
+        run: helm lint charts/${{ env.CHART_NAME }}
+
+      - name: Package Helm chart
+        run: |
+          helm package charts/${{ env.CHART_NAME }} \
+            --version ${{ steps.version.outputs.version }} \
+            --app-version ${{ steps.version.outputs.version }}
+
+      - name: Push Helm chart to OCI registry
+        run: |
+          helm push \
+            ${{ env.CHART_NAME }}-${{ steps.version.outputs.version }}.tgz \
+            oci://${{ env.REGISTRY }}/charts \
+            --plain-http
+        if: startsWith(github.ref, 'refs/tags/')

@@ -1,0 +1,89 @@
+# Default values for n8n-resource-operator
+
+replicaCount: 1
+
+image:
+  repository: registry.registry.svc.cluster.local:5000/n8n-resource-operator
+  tag: ""  # Defaults to appVersion if not set
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+rbac:
+  # Specifies whether RBAC resources should be created
+  create: true
+
+# n8n configuration
+n8n:
+  # Default n8n API URL (can be overridden per-workflow via n8nRef)
+  apiUrl: "http://n8n-service.n8n.svc.cluster.local:5678"
+  # API key secret reference
+  apiKey:
+    # Use existing secret
+    existingSecret: ""
+    # Key in the secret containing the API key
+    secretKey: "api-key"
+    # If not using existing secret, create one with this value (not recommended for production)
+    value: ""
+
+# Controller configuration
+controller:
+  # Leader election for HA deployments
+  leaderElection:
+    enabled: true
+  # Health probe bind address
+  healthProbeBindAddress: ":8081"
+  # Metrics bind address (0 to disable)
+  metricsBindAddress: "0"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Additional pod annotations
+podAnnotations: {}
+
+# Additional pod labels
+podLabels: {}
+
+# Install CRDs with the chart
+crds:
+  install: true
+
+# Namespace to watch (empty = all namespaces)
+watchNamespace: ""

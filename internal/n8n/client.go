@@ -46,18 +46,18 @@ func NewClient(baseURL, apiKey string) *Client {
 
 // Workflow represents an n8n workflow
 type Workflow struct {
-	ID          string                 `json:"id,omitempty"`
-	Name        string                 `json:"name"`
-	Active      bool                   `json:"active"`
-	Nodes       []map[string]any       `json:"nodes,omitempty"`
-	Connections map[string]any         `json:"connections,omitempty"`
-	Settings    map[string]any         `json:"settings,omitempty"`
-	StaticData  map[string]any         `json:"staticData,omitempty"`
-	PinData     map[string]any         `json:"pinData,omitempty"`
-	CreatedAt   string                 `json:"createdAt,omitempty"`
-	UpdatedAt   string                 `json:"updatedAt,omitempty"`
-	Tags        []map[string]any       `json:"tags,omitempty"`
-	Meta        map[string]any         `json:"meta,omitempty"`
+	ID          string           `json:"id,omitempty"`
+	Name        string           `json:"name"`
+	Active      bool             `json:"active"`
+	Nodes       []map[string]any `json:"nodes,omitempty"`
+	Connections map[string]any   `json:"connections,omitempty"`
+	Settings    map[string]any   `json:"settings,omitempty"`
+	StaticData  map[string]any   `json:"staticData,omitempty"`
+	PinData     map[string]any   `json:"pinData,omitempty"`
+	CreatedAt   string           `json:"createdAt,omitempty"`
+	UpdatedAt   string           `json:"updatedAt,omitempty"`
+	Tags        []map[string]any `json:"tags,omitempty"`
+	Meta        map[string]any   `json:"meta,omitempty"`
 }
 
 // WorkflowListResponse represents the response from listing workflows

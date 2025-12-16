@@ -1,0 +1,19 @@
+apiVersion: v2
+name: n8n-resource-operator
+description: A Kubernetes operator for declaratively managing n8n resources (workflows, credentials) using CRDs
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - n8n
+  - workflow
+  - credentials
+  - operator
+  - kubernetes
+  - gitops
+  - automation
+maintainers:
+  - name: jspanos
+home: https://github.com/jspanos/n8n-resource-operator
+sources:
+  - https://github.com/jspanos/n8n-resource-operator

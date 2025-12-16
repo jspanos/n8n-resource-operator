@@ -35,8 +35,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	n8nv1alpha1 "github.com/lifenautjoe/n8n-workflow-operator/api/v1alpha1"
-	"github.com/lifenautjoe/n8n-workflow-operator/internal/controller"
+	n8nv1alpha1 "github.com/jspanos/n8n-resource-operator/api/v1alpha1"
+	"github.com/jspanos/n8n-resource-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -179,8 +179,9 @@ func main() {
 	}
 
 	if err := (&controller.N8nWorkflowReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("n8nworkflow-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "N8nWorkflow")
 		os.Exit(1)
