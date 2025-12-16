@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -71,7 +73,7 @@ type N8nWorkflowReconciler struct {
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *N8nWorkflowReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	log.Info("Reconciling N8nWorkflow")
+	log.V(1).Info("Reconciling N8nWorkflow")
 
 	// Fetch the N8nWorkflow instance
 	workflow := &n8nv1alpha1.N8nWorkflow{}
@@ -204,7 +206,7 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 
 	// Handle Manual sync policy - skip all sync operations
 	if syncPolicy == n8nv1alpha1.SyncPolicyManual {
-		log.Info("SyncPolicy is Manual, skipping reconciliation")
+		log.V(1).Info("SyncPolicy is Manual, skipping reconciliation")
 		r.setCondition(workflow, n8nv1alpha1.ConditionTypeReady, metav1.ConditionTrue,
 			"SyncPaused", "Sync is paused (syncPolicy: Manual)")
 		if statusErr := r.Status().Update(ctx, workflow); statusErr != nil {
@@ -212,6 +214,10 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 		}
 		return ctrl.Result{RequeueAfter: defaultRequeueInterval}, nil
 	}
+
+	// Calculate spec hash to detect CRD changes
+	currentSpecHash := r.calculateSpecHash(workflow)
+	specChanged := workflow.Status.SpecHash != currentSpecHash
 
 	// Convert CRD workflow spec to n8n workflow
 	n8nWorkflow, err := r.convertToN8nWorkflow(workflow)
@@ -232,7 +238,7 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 		// Try to get by ID first
 		existingWorkflow, err = n8nClient.GetWorkflow(ctx, workflow.Status.WorkflowID)
 		if err != nil {
-			log.Info("Failed to get workflow by ID, will search by name", "id", workflow.Status.WorkflowID, "error", err)
+			log.V(1).Info("Failed to get workflow by ID, will search by name", "id", workflow.Status.WorkflowID, "error", err)
 			existingWorkflow = nil
 		}
 	}
@@ -266,6 +272,7 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 			return ctrl.Result{RequeueAfter: errorRequeueInterval}, err
 		}
 		workflow.Status.WorkflowID = created.ID
+		workflow.Status.SpecHash = currentSpecHash
 		r.Recorder.Event(workflow, corev1.EventTypeNormal, "Created", fmt.Sprintf("Workflow created with ID %s", created.ID))
 		existingWorkflow = created
 	} else {
@@ -274,13 +281,12 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 
 		if syncPolicy == n8nv1alpha1.SyncPolicyCreateOnly {
 			// CreateOnly: Don't update, just track the workflow
-			log.Info("SyncPolicy is CreateOnly, skipping update", "id", existingWorkflow.ID)
+			log.V(1).Info("SyncPolicy is CreateOnly, skipping update", "id", existingWorkflow.ID)
+			workflow.Status.SpecHash = currentSpecHash
 		} else {
-			// Always: Update the workflow
-			log.Info("Updating workflow in n8n", "id", existingWorkflow.ID, "name", workflow.Spec.Workflow.Name)
-
-			// Check if update is needed
-			if r.needsUpdate(existingWorkflow, n8nWorkflow) {
+			// Always: Update only if spec changed
+			if specChanged {
+				log.Info("Spec changed, updating workflow in n8n", "id", existingWorkflow.ID, "name", workflow.Spec.Workflow.Name)
 				updated, err := n8nClient.UpdateWorkflow(ctx, existingWorkflow.ID, n8nWorkflow)
 				if err != nil {
 					log.Error(err, "Failed to update workflow")
@@ -293,7 +299,10 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 					return ctrl.Result{RequeueAfter: errorRequeueInterval}, err
 				}
 				r.Recorder.Event(workflow, corev1.EventTypeNormal, "Updated", "Workflow updated successfully")
+				workflow.Status.SpecHash = currentSpecHash
 				existingWorkflow = updated
+			} else {
+				log.V(1).Info("No spec changes, skipping update", "id", existingWorkflow.ID)
 			}
 		}
 	}
@@ -353,7 +362,7 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Reconciliation complete", "workflowId", workflow.Status.WorkflowID, "active", workflow.Status.Active)
+	log.V(1).Info("Reconciliation complete", "workflowId", workflow.Status.WorkflowID, "active", workflow.Status.Active)
 	return ctrl.Result{RequeueAfter: defaultRequeueInterval}, nil
 }
 
@@ -455,11 +464,26 @@ func (r *N8nWorkflowReconciler) convertToN8nWorkflow(workflow *n8nv1alpha1.N8nWo
 	return n8nWorkflow, nil
 }
 
-// needsUpdate checks if the workflow needs to be updated in n8n
-func (r *N8nWorkflowReconciler) needsUpdate(existing *n8n.Workflow, desired *n8n.Workflow) bool {
-	// For now, always update to ensure consistency
-	// In a production system, you might want to compare the actual content
-	return true
+// calculateSpecHash calculates a SHA256 hash of the workflow spec
+// Used to detect changes in the CRD without comparing to n8n
+func (r *N8nWorkflowReconciler) calculateSpecHash(workflow *n8nv1alpha1.N8nWorkflow) string {
+	// Create a struct with just the fields we care about for comparison
+	specData := struct {
+		Active   bool                             `json:"active"`
+		Workflow n8nv1alpha1.WorkflowSpec         `json:"workflow"`
+	}{
+		Active:   workflow.Spec.Active,
+		Workflow: workflow.Spec.Workflow,
+	}
+
+	data, err := json.Marshal(specData)
+	if err != nil {
+		// If marshaling fails, return empty string to force update
+		return ""
+	}
+
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
 }
 
 // extractWebhookURL extracts the webhook URL from a workflow if it has a webhook trigger

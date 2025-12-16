@@ -223,6 +223,11 @@ spec:
                 description: The generation observed by the controller
                 format: int64
                 type: integer
+              specHash:
+                description: |-
+                  Hash of the workflow spec used for drift detection
+                  Only updates when spec actually changes
+                type: string
               webhookUrl:
                 description: The webhook URL if the workflow has a webhook trigger
                 type: string

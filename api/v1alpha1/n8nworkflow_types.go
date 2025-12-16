@@ -154,6 +154,11 @@ type N8nWorkflowStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// Hash of the workflow spec used for drift detection
+	// Only updates when spec actually changes
+	// +optional
+	SpecHash string `json:"specHash,omitempty"`
+
 	// Conditions of the workflow
 	// +listType=map
 	// +listMapKey=type
