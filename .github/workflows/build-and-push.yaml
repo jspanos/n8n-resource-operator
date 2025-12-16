@@ -18,7 +18,7 @@ jobs:
   test:
     runs-on: arc-runner-n8n-resource-operator
     container:
-      image: golang:1.23-alpine
+      image: golang:1.24-alpine
     steps:
       - name: Install dependencies
         run: apk add --no-cache git make bash
