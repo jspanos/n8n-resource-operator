@@ -1,0 +1,153 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: n8nworkflows.n8n.slys.dev
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+spec:
+  group: n8n.slys.dev
+  names:
+    kind: N8nWorkflow
+    listKind: N8nWorkflowList
+    plural: n8nworkflows
+    singular: n8nworkflow
+    shortNames:
+      - n8nwf
+      - wf
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Workflow Name
+          type: string
+          jsonPath: .spec.workflow.name
+        - name: Active
+          type: boolean
+          jsonPath: .status.active
+        - name: Workflow ID
+          type: string
+          jsonPath: .status.workflowId
+        - name: Last Sync
+          type: date
+          jsonPath: .status.lastSyncTime
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: N8nWorkflow is the Schema for the n8nworkflows API
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              description: N8nWorkflowSpec defines the desired state of N8nWorkflow
+              required:
+                - workflow
+              properties:
+                n8nRef:
+                  type: object
+                  description: Reference to the n8n instance to sync to
+                  properties:
+                    name:
+                      type: string
+                      description: Name of the n8n service
+                      default: n8n-service
+                    namespace:
+                      type: string
+                      description: Namespace of the n8n service
+                    port:
+                      type: integer
+                      description: Port of the n8n service
+                      default: 5678
+                active:
+                  type: boolean
+                  description: Whether the workflow should be active
+                  default: true
+                workflow:
+                  type: object
+                  description: The n8n workflow definition
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                      description: Workflow name (must be unique in n8n)
+                    nodes:
+                      type: array
+                      description: List of workflow nodes
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    connections:
+                      type: object
+                      description: Node connections
+                      x-kubernetes-preserve-unknown-fields: true
+                    settings:
+                      type: object
+                      description: Workflow settings
+                      x-kubernetes-preserve-unknown-fields: true
+                    staticData:
+                      type: object
+                      description: Static data for the workflow
+                      x-kubernetes-preserve-unknown-fields: true
+                    pinData:
+                      type: object
+                      description: Pinned data for nodes
+                      x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              description: N8nWorkflowStatus defines the observed state of N8nWorkflow
+              properties:
+                workflowId:
+                  type: string
+                  description: The n8n internal workflow ID
+                active:
+                  type: boolean
+                  description: Whether the workflow is currently active in n8n
+                lastSyncTime:
+                  type: string
+                  format: date-time
+                  description: Last time the workflow was synced to n8n
+                webhookUrl:
+                  type: string
+                  description: The webhook URL if the workflow has a webhook trigger
+                observedGeneration:
+                  type: integer
+                  format: int64
+                  description: The generation observed by the controller
+                conditions:
+                  type: array
+                  description: Conditions of the workflow
+                  items:
+                    type: object
+                    required:
+                      - type
+                      - status
+                    properties:
+                      type:
+                        type: string
+                        description: Type of condition (Ready, Synced, etc.)
+                      status:
+                        type: string
+                        description: Status of the condition (True, False, Unknown)
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                        description: Last time the condition transitioned
+                      reason:
+                        type: string
+                        description: Reason for the condition
+                      message:
+                        type: string
+                        description: Human-readable message

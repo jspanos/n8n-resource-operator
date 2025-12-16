@@ -1,0 +1,47 @@
+---
+# Simple webhook workflow example
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nWorkflow
+metadata:
+  name: simple-webhook
+  namespace: n8n
+spec:
+  active: true
+  workflow:
+    name: "Simple Webhook"
+    nodes:
+      - id: "webhook-1"
+        name: "Webhook"
+        type: "n8n-nodes-base.webhook"
+        typeVersion: 1
+        parameters:
+          httpMethod: "POST"
+          path: "simple"
+          responseMode: "lastNode"
+        position: [0, 0]
+
+      - id: "set-1"
+        name: "Set Response"
+        type: "n8n-nodes-base.set"
+        typeVersion: 3.4
+        parameters:
+          mode: "manual"
+          assignments:
+            assignments:
+              - name: "message"
+                value: "Hello from n8n!"
+                type: "string"
+              - name: "timestamp"
+                value: "={{ $now.toISO() }}"
+                type: "string"
+        position: [200, 0]
+
+    connections:
+      Webhook:
+        main:
+          - - node: "Set Response"
+              type: "main"
+              index: 0
+
+    settings:
+      executionOrder: "v1"

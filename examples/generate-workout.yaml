@@ -1,0 +1,113 @@
+---
+# Example N8nWorkflow CR based on actual gym-track workflow
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nWorkflow
+metadata:
+  name: generate-workout
+  namespace: n8n
+  labels:
+    app: gym-track
+spec:
+  # Reference to n8n instance
+  n8nRef:
+    name: n8n-service
+    namespace: n8n
+
+  # Workflow should be active
+  active: true
+
+  # The actual n8n workflow JSON
+  # This is extracted from: n8n/last_working/Generate Workout.json
+  workflow:
+    name: "Generate Workout"
+    nodes:
+      - parameters:
+          httpMethod: "POST"
+          path: "generate"
+          responseMode: "responseNode"
+          options: {}
+        id: "4ee656ab-70ff-4e44-a3e1-fe3bf5a4507e"
+        name: "Webhook"
+        type: "n8n-nodes-base.webhook"
+        typeVersion: 1
+        position: [-448, -96]
+        webhookId: "generate-workout"
+
+      - parameters:
+          respondWith: "json"
+          responseBody: "={{ $json.output }}"
+          options: {}
+        id: "dd6f2a44-cb2d-4cbb-b94b-642fd8cd9d28"
+        name: "Respond to Webhook"
+        type: "n8n-nodes-base.respondToWebhook"
+        typeVersion: 1
+        position: [304, -112]
+
+      - parameters:
+          promptType: "define"
+          text: |
+            You are an elite Strength and Conditioning Coach...
+            [Full prompt text here]
+          hasOutputParser: true
+          batching: {}
+        type: "@n8n/n8n-nodes-langchain.chainLlm"
+        typeVersion: 1.7
+        position: [-96, -112]
+        id: "ab6f3861-4c2f-4c87-98b7-2f7df467d07a"
+        name: "Basic LLM Chain"
+
+      - parameters:
+          modelName: "models/gemini-2.5-flash-lite"
+          options: {}
+        type: "@n8n/n8n-nodes-langchain.lmChatGoogleGemini"
+        typeVersion: 1
+        position: [-224, 160]
+        id: "ddd8f503-c647-4c26-abeb-879cdd41afda"
+        name: "Google Gemini Chat Model"
+        credentials:
+          googlePalmApi:
+            id: "LDQMtSwCNKZftAU3"
+            name: "Google Gemini(PaLM) Api account"
+
+      - parameters:
+          jsonSchemaExample: |
+            {
+              "program_name": "string",
+              "phases": [...]
+            }
+          autoFix: true
+        type: "@n8n/n8n-nodes-langchain.outputParserStructured"
+        typeVersion: 1.3
+        position: [16, 64]
+        id: "5e812136-2888-42bd-b2a1-b3010756f5bb"
+        name: "Structured Output Parser"
+
+    connections:
+      Webhook:
+        main:
+          - - node: "Basic LLM Chain"
+              type: "main"
+              index: 0
+      "Basic LLM Chain":
+        main:
+          - - node: "Respond to Webhook"
+              type: "main"
+              index: 0
+      "Google Gemini Chat Model":
+        ai_languageModel:
+          - - node: "Basic LLM Chain"
+              type: "ai_languageModel"
+              index: 0
+            - node: "Structured Output Parser"
+              type: "ai_languageModel"
+              index: 0
+      "Structured Output Parser":
+        ai_outputParser:
+          - - node: "Basic LLM Chain"
+              type: "ai_outputParser"
+              index: 0
+
+    settings:
+      timezone: "Europe/Amsterdam"
+      callerPolicy: "workflowsFromSameOwner"
+      executionOrder: "v1"
