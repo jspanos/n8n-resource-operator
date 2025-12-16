@@ -33,7 +33,8 @@ jobs:
       - name: Run tests
         run: |
           go mod tidy
-          go test ./internal/... -v
+          # Run only n8n client tests (controller tests require envtest/kubebuilder)
+          go test ./internal/n8n/... -v
 
   build-and-push:
     runs-on: arc-runner-n8n-resource-operator
