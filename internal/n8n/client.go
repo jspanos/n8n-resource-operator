@@ -60,6 +60,16 @@ type Workflow struct {
 	Meta        map[string]any   `json:"meta,omitempty"`
 }
 
+// WorkflowCreateRequest is used when creating a workflow (active is read-only in n8n API)
+type WorkflowCreateRequest struct {
+	Name        string           `json:"name"`
+	Nodes       []map[string]any `json:"nodes,omitempty"`
+	Connections map[string]any   `json:"connections,omitempty"`
+	Settings    map[string]any   `json:"settings,omitempty"`
+	StaticData  map[string]any   `json:"staticData,omitempty"`
+	PinData     map[string]any   `json:"pinData,omitempty"`
+}
+
 // WorkflowListResponse represents the response from listing workflows
 type WorkflowListResponse struct {
 	Data       []Workflow `json:"data"`
@@ -186,7 +196,17 @@ func (c *Client) GetWorkflowByName(ctx context.Context, name string) (*Workflow,
 
 // CreateWorkflow creates a new workflow in n8n
 func (c *Client) CreateWorkflow(ctx context.Context, workflow *Workflow) (*Workflow, error) {
-	respBody, err := c.doRequest(ctx, http.MethodPost, "/api/v1/workflows", workflow)
+	// Use WorkflowCreateRequest to exclude the 'active' field (read-only in n8n API)
+	createReq := &WorkflowCreateRequest{
+		Name:        workflow.Name,
+		Nodes:       workflow.Nodes,
+		Connections: workflow.Connections,
+		Settings:    workflow.Settings,
+		StaticData:  workflow.StaticData,
+		PinData:     workflow.PinData,
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/api/v1/workflows", createReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create workflow: %w", err)
 	}
@@ -201,7 +221,17 @@ func (c *Client) CreateWorkflow(ctx context.Context, workflow *Workflow) (*Workf
 
 // UpdateWorkflow updates an existing workflow
 func (c *Client) UpdateWorkflow(ctx context.Context, id string, workflow *Workflow) (*Workflow, error) {
-	respBody, err := c.doRequest(ctx, http.MethodPut, "/api/v1/workflows/"+id, workflow)
+	// Use WorkflowCreateRequest to exclude the 'active' field (read-only in n8n API)
+	updateReq := &WorkflowCreateRequest{
+		Name:        workflow.Name,
+		Nodes:       workflow.Nodes,
+		Connections: workflow.Connections,
+		Settings:    workflow.Settings,
+		StaticData:  workflow.StaticData,
+		PinData:     workflow.PinData,
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodPut, "/api/v1/workflows/"+id, updateReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update workflow %s: %w", id, err)
 	}
