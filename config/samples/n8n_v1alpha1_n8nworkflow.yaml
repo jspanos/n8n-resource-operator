@@ -1,0 +1,9 @@
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nWorkflow
+metadata:
+  labels:
+    app.kubernetes.io/name: n8n-workflow-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: n8nworkflow-sample
+spec:
+  # TODO(user): Add fields here
