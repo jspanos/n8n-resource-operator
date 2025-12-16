@@ -24,19 +24,6 @@ rbac:
   # Specifies whether RBAC resources should be created
   create: true
 
-# n8n configuration
-n8n:
-  # Default n8n API URL (can be overridden per-workflow via n8nRef)
-  apiUrl: "http://n8n-service.n8n.svc.cluster.local:5678"
-  # API key secret reference
-  apiKey:
-    # Use existing secret
-    existingSecret: ""
-    # Key in the secret containing the API key
-    secretKey: "api-key"
-    # If not using existing secret, create one with this value (not recommended for production)
-    value: ""
-
 # Controller configuration
 controller:
   # Leader election for HA deployments

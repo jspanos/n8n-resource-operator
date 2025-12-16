@@ -63,17 +63,6 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Create the name of the API key secret
-*/}}
-{{- define "n8n-resource-operator.apiKeySecretName" -}}
-{{- if .Values.n8n.apiKey.existingSecret }}
-{{- .Values.n8n.apiKey.existingSecret }}
-{{- else }}
-{{- printf "%s-api-key" (include "n8n-resource-operator.fullname" .) }}
-{{- end }}
-{{- end }}
-
-{{/*
 Get the image tag
 */}}
 {{- define "n8n-resource-operator.imageTag" -}}

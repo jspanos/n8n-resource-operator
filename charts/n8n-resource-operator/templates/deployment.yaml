@@ -45,14 +45,6 @@ spec:
             - --metrics-bind-address={{ .Values.controller.metricsBindAddress }}
             {{- end }}
           env:
-            - name: N8N_API_URL
-              value: {{ .Values.n8n.apiUrl | quote }}
-            - name: N8N_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "n8n-resource-operator.apiKeySecretName" . }}
-                  key: {{ .Values.n8n.apiKey.secretKey }}
-                  optional: true
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

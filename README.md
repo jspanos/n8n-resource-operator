@@ -18,7 +18,8 @@ This operator solves these problems by using the **n8n REST API**, which properl
 - **GitOps-friendly** - works seamlessly with FluxCD, ArgoCD, or any GitOps tool
 - **Sync policies** - control how changes sync between Git and n8n UI
 - **Proper webhook registration** via REST API (not CLI)
-- **Multi-instance support** - target different n8n instances per workflow
+- **Multi-instance support** - manage multiple n8n instances (cloud and self-hosted)
+- **Centralized secrets** - API keys stored in operator namespace
 - **Status reporting** - track workflow state, webhook URLs, and sync status
 - **Automatic cleanup** - workflows are deleted from n8n when CRs are removed
 
@@ -34,30 +35,70 @@ This operator solves these problems by using the **n8n REST API**, which properl
 
 ```bash
 # Install CRDs
+kubectl apply -f https://raw.githubusercontent.com/jspanos/n8n-resource-operator/main/config/crd/bases/n8n.slys.dev_n8ninstances.yaml
 kubectl apply -f https://raw.githubusercontent.com/jspanos/n8n-resource-operator/main/config/crd/bases/n8n.slys.dev_n8nworkflows.yaml
 
 # Create namespace
-kubectl create namespace n8n-resource-operator-system
+kubectl create namespace n8n-resource-operator
 
 # Deploy operator (replace with your image)
 kubectl apply -f https://raw.githubusercontent.com/jspanos/n8n-resource-operator/main/config/deploy/
 ```
 
-### Create Your First Workflow
+### Step 1: Create an N8nInstance
+
+First, define your n8n connection in the operator namespace:
+
+```yaml
+# For self-hosted n8n in Kubernetes
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nInstance
+metadata:
+  name: default
+  namespace: n8n-resource-operator  # Must be in operator namespace
+spec:
+  serviceRef:
+    name: n8n-service
+    namespace: n8n
+    port: 5678
+  credentials:
+    secretName: n8n-api-key
+    secretKey: api-key
+```
+
+```yaml
+# For n8n.cloud (cloud-hosted n8n)
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nInstance
+metadata:
+  name: cloud
+  namespace: n8n-resource-operator
+spec:
+  url: "https://myorg.app.n8n.cloud"
+  credentials:
+    secretName: n8n-cloud-api-key
+    secretKey: api-key
+```
+
+Create the API key secret (in the operator namespace):
+
+```bash
+kubectl create secret generic n8n-api-key \
+  --namespace n8n-resource-operator \
+  --from-literal=api-key=YOUR_N8N_API_KEY
+```
+
+### Step 2: Create Your First Workflow
 
 ```yaml
 apiVersion: n8n.slys.dev/v1alpha1
 kind: N8nWorkflow
 metadata:
   name: hello-webhook
-  namespace: n8n
+  namespace: n8n  # Workflows can be in any namespace
 spec:
-  # n8n instance configuration
-  n8nRef:
-    url: "http://n8n.example.com:5678"  # Or use service discovery (see below)
-    secretRef:
-      name: n8n-api-key
-      key: api-key
+  # Reference to the N8nInstance (by name, in operator namespace)
+  instanceRef: default
 
   # Sync policy: Always, CreateOnly, or Manual
   syncPolicy: Always
@@ -105,24 +146,43 @@ kubectl apply -f hello-webhook.yaml
 Check status:
 
 ```bash
+# Check N8nInstance health
+kubectl get n8ninstances -n n8n-resource-operator
+
+# Output:
+# NAME      URL                                           READY   LAST CHECK             AGE
+# default   http://n8n-service.n8n.svc.cluster.local:5678 true    2024-01-15T10:30:00Z   5m
+
+# Check workflows
 kubectl get n8nworkflows -n n8n
 
 # Output:
-# NAME            WORKFLOW NAME    ACTIVE   SYNC POLICY   WORKFLOW ID        LAST SYNC              AGE
-# hello-webhook   Hello Webhook    true     Always        abc123xyz          2024-01-15T10:30:00Z   5m
+# NAME            INSTANCE   WORKFLOW NAME    ACTIVE   SYNC POLICY   WORKFLOW ID   AGE
+# hello-webhook   default    Hello Webhook    true     Always        abc123xyz     5m
 ```
 
 ## Configuration
+
+### N8nInstance Spec
+
+The N8nInstance CRD defines a connection to an n8n instance. All N8nInstance resources must be created in the operator namespace.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `url` | string | Full n8n API URL (for cloud/external n8n) | - |
+| `serviceRef.name` | string | n8n Kubernetes service name | - |
+| `serviceRef.namespace` | string | n8n service namespace | - |
+| `serviceRef.port` | integer | n8n service port | `5678` |
+| `credentials.secretName` | string | Secret containing API key (required) | - |
+| `credentials.secretKey` | string | Key in secret for API key | `api-key` |
+
+> **Note:** Either `url` OR `serviceRef` must be specified, but not both.
 
 ### N8nWorkflow Spec
 
 | Field | Type | Description | Default |
 |-------|------|-------------|---------|
-| `n8nRef.url` | string | Full n8n API URL (takes precedence) | - |
-| `n8nRef.name` | string | n8n Kubernetes service name | `n8n-service` |
-| `n8nRef.namespace` | string | n8n service namespace | Same as workflow |
-| `n8nRef.port` | integer | n8n service port | `5678` |
-| `n8nRef.secretRef` | object | Secret containing API key | - |
+| `instanceRef` | string | Name of N8nInstance in operator namespace (required) | - |
 | `syncPolicy` | string | How to sync with n8n (see below) | `Always` |
 | `active` | boolean | Whether workflow should be active | `true` |
 | `workflow.name` | string | Workflow name in n8n (required) | - |
@@ -144,6 +204,7 @@ Control how the operator handles synchronization between your CRD and the n8n UI
 
 ```yaml
 spec:
+  instanceRef: default
   syncPolicy: CreateOnly  # Create once, then allow UI editing
   active: true
   workflow:
@@ -151,50 +212,18 @@ spec:
     # ...
 ```
 
-### n8n Instance Configuration
-
-**Option 1: Direct URL (Recommended for external n8n)**
-
-```yaml
-spec:
-  n8nRef:
-    url: "https://n8n.mycompany.com"
-    secretRef:
-      name: n8n-api-key
-      key: api-key
-```
-
-**Option 2: Kubernetes Service Discovery**
-
-```yaml
-spec:
-  n8nRef:
-    name: n8n-service      # Service name
-    namespace: n8n         # Service namespace
-    port: 5678             # Service port
-    secretRef:
-      name: n8n-api-key
-      key: api-key
-```
-
-**Option 3: Environment Variables (Operator Default)**
-
-Set these on the operator deployment:
-
-```yaml
-env:
-  - name: N8N_API_URL
-    value: "http://n8n-service.n8n.svc.cluster.local:5678"
-  - name: N8N_API_KEY
-    valueFrom:
-      secretKeyRef:
-        name: n8n-api-key
-        key: api-key
-```
-
 ### Status Fields
 
-The operator reports these status fields:
+**N8nInstance Status:**
+
+| Field | Description |
+|-------|-------------|
+| `ready` | Whether the instance is reachable and authenticated |
+| `url` | Resolved URL for the n8n instance |
+| `lastHealthCheck` | Last successful health check timestamp |
+| `conditions` | Ready condition |
+
+**N8nWorkflow Status:**
 
 | Field | Description |
 |-------|-------------|
@@ -203,6 +232,55 @@ The operator reports these status fields:
 | `lastSyncTime` | Last successful sync timestamp |
 | `webhookUrl` | Webhook URL if workflow has webhook trigger |
 | `conditions` | Ready/Synced conditions |
+
+## Multi-Instance Support
+
+This operator supports multiple n8n instances, allowing you to:
+
+- Manage workflows across different n8n environments (dev, staging, prod)
+- Target both self-hosted Kubernetes n8n and cloud-hosted n8n.cloud
+- Keep secrets centralized in the operator namespace
+
+**Example: Multiple Instances**
+
+```yaml
+# Self-hosted development n8n
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nInstance
+metadata:
+  name: dev
+  namespace: n8n-resource-operator
+spec:
+  serviceRef:
+    name: n8n-service
+    namespace: n8n-dev
+  credentials:
+    secretName: n8n-dev-api-key
+---
+# Production n8n.cloud
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nInstance
+metadata:
+  name: production
+  namespace: n8n-resource-operator
+spec:
+  url: "https://mycompany.app.n8n.cloud"
+  credentials:
+    secretName: n8n-production-api-key
+---
+# Workflow targeting production
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nWorkflow
+metadata:
+  name: production-workflow
+  namespace: n8n
+spec:
+  instanceRef: production  # Target the production instance
+  active: true
+  workflow:
+    name: "Production Workflow"
+    # ...
+```
 
 ## Converting Existing Workflows
 
@@ -214,10 +292,7 @@ kind: N8nWorkflow
 metadata:
   name: my-workflow
 spec:
-  n8nRef:
-    url: "http://n8n.example.com:5678"
-    secretRef:
-      name: n8n-api-key
+  instanceRef: default
   active: true
   workflow:
     # Paste the contents of your exported JSON here
@@ -244,6 +319,76 @@ resources:
 ### ArgoCD Example
 
 Point ArgoCD at a directory containing your N8nWorkflow manifests.
+
+## Migration from v0.2.x
+
+Version 0.3.0 introduces breaking changes. Follow these steps to migrate:
+
+### Breaking Changes
+
+1. `spec.n8nRef` has been **removed** from N8nWorkflow
+2. `n8n.apiUrl` and `n8n.apiKey.*` Helm values have been **removed**
+3. Secrets must now be in the **operator namespace**
+4. N8nInstance CRD is now **required** before deploying workflows
+
+### Migration Steps
+
+1. **Create N8nInstance resources** for your n8n instances:
+
+```yaml
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nInstance
+metadata:
+  name: default
+  namespace: n8n-resource-operator
+spec:
+  serviceRef:
+    name: n8n-service
+    namespace: n8n
+    port: 5678
+  credentials:
+    secretName: n8n-api-key
+```
+
+2. **Move API key secrets** to the operator namespace:
+
+```bash
+kubectl get secret n8n-api-key -n n8n -o yaml | \
+  sed 's/namespace: n8n/namespace: n8n-resource-operator/' | \
+  kubectl apply -f -
+```
+
+3. **Update N8nWorkflow resources** - replace `n8nRef` with `instanceRef`:
+
+```yaml
+# Before (v0.2.x)
+spec:
+  n8nRef:
+    name: n8n-service
+    namespace: n8n
+    secretRef:
+      name: n8n-api-key
+
+# After (v0.3.0)
+spec:
+  instanceRef: default  # Reference to N8nInstance name
+```
+
+4. **Update Helm values** if using Helm - remove the old `n8n.*` configuration:
+
+```yaml
+# Before (v0.2.x)
+n8n:
+  apiUrl: "http://n8n-service.n8n.svc.cluster.local:5678"
+  apiKey:
+    existingSecret: "n8n-api-key"
+    secretKey: "api-key"
+
+# After (v0.3.0)
+# (no n8n section - configure via N8nInstance CRD)
+```
+
+5. **Deploy v0.3.0** operator
 
 ## Development
 
@@ -280,7 +425,8 @@ make docker-push IMG=your-registry/n8n-resource-operator:dev
 make install
 
 # Run controller (uses your kubeconfig)
-make run
+# Note: You must set POD_NAMESPACE or use --operator-namespace flag
+POD_NAMESPACE=n8n-resource-operator make run
 ```
 
 ### Deploy to Cluster

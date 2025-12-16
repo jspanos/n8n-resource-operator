@@ -24,6 +24,32 @@ rules:
   - apiGroups:
       - n8n.slys.dev
     resources:
+      - n8ninstances
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - n8n.slys.dev
+    resources:
+      - n8ninstances/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - n8n.slys.dev
+    resources:
+      - n8ninstances/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - n8n.slys.dev
+    resources:
       - n8nworkflows
     verbs:
       - create

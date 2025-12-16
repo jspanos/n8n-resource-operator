@@ -4,42 +4,38 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
-  name: n8nworkflows.n8n.slys.dev
+  name: n8ninstances.n8n.slys.dev
 spec:
   group: n8n.slys.dev
   names:
-    kind: N8nWorkflow
-    listKind: N8nWorkflowList
-    plural: n8nworkflows
+    kind: N8nInstance
+    listKind: N8nInstanceList
+    plural: n8ninstances
     shortNames:
-    - n8nwf
-    - wf
-    singular: n8nworkflow
+    - n8ni
+    - instance
+    singular: n8ninstance
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.instanceRef
-      name: Instance
+    - jsonPath: .status.url
+      name: URL
       type: string
-    - jsonPath: .spec.workflow.name
-      name: Workflow Name
-      type: string
-    - jsonPath: .status.active
-      name: Active
+    - jsonPath: .status.ready
+      name: Ready
       type: boolean
-    - jsonPath: .spec.syncPolicy
-      name: Sync Policy
-      type: string
-    - jsonPath: .status.workflowId
-      name: Workflow ID
-      type: string
+    - jsonPath: .status.lastHealthCheck
+      name: Last Check
+      type: date
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: N8nWorkflow is the Schema for the n8nworkflows API
+        description: |-
+          N8nInstance is the Schema for the n8ninstances API
+          It defines a connection to an n8n instance (cloud or self-hosted)
         properties:
           apiVersion:
             description: |-
@@ -59,75 +55,61 @@ spec:
           metadata:
             type: object
           spec:
-            description: N8nWorkflowSpec defines the desired state of N8nWorkflow
+            description: N8nInstanceSpec defines the desired state of N8nInstance
             properties:
-              active:
-                default: true
-                description: Whether the workflow should be active
-                type: boolean
-              instanceRef:
+              credentials:
                 description: |-
-                  InstanceRef references an N8nInstance by name
-                  The N8nInstance must exist in the operator namespace
-                minLength: 1
-                type: string
-              syncPolicy:
-                default: Always
-                description: |-
-                  SyncPolicy defines how the operator handles synchronization with n8n
-                  - Always: Continuously sync, overwriting UI changes (default)
-                  - CreateOnly: Create workflow but never update, allowing UI edits
-                  - Manual: Pause all sync operations
-                enum:
-                - Always
-                - CreateOnly
-                - Manual
-                type: string
-              workflow:
-                description: The n8n workflow definition
+                  Credentials references the secret containing the n8n API key
+                  The secret must be in the same namespace as this N8nInstance
                 properties:
-                  connections:
-                    description: Connections between nodes
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
-                  name:
-                    description: Name of the workflow (must be unique in n8n)
-                    minLength: 1
+                  secretKey:
+                    default: api-key
+                    description: SecretKey is the key in the secret containing the
+                      API key
                     type: string
-                  nodes:
-                    description: Nodes in the workflow
-                    items:
-                      type: object
-                      x-kubernetes-preserve-unknown-fields: true
-                    type: array
-                    x-kubernetes-preserve-unknown-fields: true
-                  pinData:
-                    description: Pinned data for nodes
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
-                  settings:
-                    description: Workflow settings
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
-                  staticData:
-                    description: Static data for the workflow
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
+                  secretName:
+                    description: |-
+                      SecretName is the name of the secret containing the API key
+                      The secret must be in the same namespace as the N8nInstance (operator namespace)
+                    type: string
+                required:
+                - secretName
+                type: object
+              serviceRef:
+                description: |-
+                  ServiceRef references a Kubernetes service running n8n
+                  Use this for self-hosted n8n within the same Kubernetes cluster
+                  Either URL or ServiceRef must be specified, but not both
+                properties:
+                  name:
+                    description: Name of the n8n service
+                    type: string
+                  namespace:
+                    description: Namespace of the n8n service
+                    type: string
+                  port:
+                    default: 5678
+                    description: Port of the n8n service
+                    type: integer
                 required:
                 - name
+                - namespace
                 type: object
+              url:
+                description: |-
+                  URL is the full base URL of the n8n instance API
+                  Use this for cloud-hosted n8n (e.g., "https://myorg.app.n8n.cloud")
+                  or any externally accessible n8n instance
+                  Either URL or ServiceRef must be specified, but not both
+                type: string
             required:
-            - instanceRef
-            - workflow
+            - credentials
             type: object
           status:
-            description: N8nWorkflowStatus defines the observed state of N8nWorkflow
+            description: N8nInstanceStatus defines the observed state of N8nInstance
             properties:
-              active:
-                description: Whether the workflow is currently active in n8n
-                type: boolean
               conditions:
-                description: Conditions of the workflow
+                description: Conditions of the n8n instance
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -186,24 +168,21 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              lastSyncTime:
-                description: Last time the workflow was synced to n8n
+              lastHealthCheck:
+                description: LastHealthCheck is the last time the instance was successfully
+                  health-checked
                 format: date-time
                 type: string
               observedGeneration:
                 description: The generation observed by the controller
                 format: int64
                 type: integer
-              specHash:
-                description: |-
-                  Hash of the workflow spec used for drift detection
-                  Only updates when spec actually changes
-                type: string
-              webhookUrl:
-                description: The webhook URL if the workflow has a webhook trigger
-                type: string
-              workflowId:
-                description: The n8n internal workflow ID
+              ready:
+                description: Ready indicates whether the n8n instance is reachable
+                  and authenticated
+                type: boolean
+              url:
+                description: URL is the resolved URL used to connect to the n8n instance
                 type: string
             type: object
         required:

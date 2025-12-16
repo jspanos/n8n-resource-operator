@@ -1,0 +1,37 @@
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nInstance
+metadata:
+  name: default
+  namespace: n8n-resource-operator
+  labels:
+    app.kubernetes.io/name: n8n-resource-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  # Option 1: Kubernetes service discovery (for self-hosted n8n in cluster)
+  serviceRef:
+    name: n8n-service
+    namespace: n8n
+    port: 5678
+
+  # Option 2: Direct URL (for cloud-hosted n8n like n8n.cloud)
+  # url: "https://myorg.app.n8n.cloud"
+
+  # API key credentials (secret must be in operator namespace)
+  credentials:
+    secretName: n8n-api-key
+    secretKey: api-key  # default: "api-key"
+---
+# Example for n8n.cloud (cloud-hosted n8n)
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nInstance
+metadata:
+  name: cloud
+  namespace: n8n-resource-operator
+  labels:
+    app.kubernetes.io/name: n8n-resource-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  url: "https://myorg.app.n8n.cloud"
+  credentials:
+    secretName: n8n-cloud-api-key
+    secretKey: api-key

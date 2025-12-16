@@ -22,6 +22,7 @@ rules:
 - apiGroups:
   - n8n.slys.dev
   resources:
+  - n8ninstances
   - n8nworkflows
   verbs:
   - create
@@ -34,12 +35,14 @@ rules:
 - apiGroups:
   - n8n.slys.dev
   resources:
+  - n8ninstances/finalizers
   - n8nworkflows/finalizers
   verbs:
   - update
 - apiGroups:
   - n8n.slys.dev
   resources:
+  - n8ninstances/status
   - n8nworkflows/status
   verbs:
   - get

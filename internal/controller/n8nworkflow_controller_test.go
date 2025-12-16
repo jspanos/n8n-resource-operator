@@ -53,7 +53,8 @@ var _ = Describe("N8nWorkflow Controller", func() {
 						Namespace: "default",
 					},
 					Spec: n8nv1alpha1.N8nWorkflowSpec{
-						Active: true,
+						InstanceRef: "test-instance",
+						Active:      true,
 						Workflow: n8nv1alpha1.WorkflowSpec{
 							Name: "Test Workflow",
 						},
@@ -81,18 +82,19 @@ var _ = Describe("N8nWorkflow Controller", func() {
 			By("Reconciling the created resource")
 			fakeRecorder := record.NewFakeRecorder(10)
 			controllerReconciler := &N8nWorkflowReconciler{
-				Client:   k8sClient,
-				Scheme:   k8sClient.Scheme(),
-				Recorder: fakeRecorder,
+				Client:            k8sClient,
+				Scheme:            k8sClient.Scheme(),
+				Recorder:          fakeRecorder,
+				OperatorNamespace: "default",
 			}
 
-			// Reconciliation will fail without n8n API key, but should not panic
+			// Reconciliation will fail without N8nInstance, but should not panic
 			// and should update status with appropriate error condition
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 
-			// Expected to fail due to missing API key configuration
+			// Expected to fail due to missing N8nInstance
 			Expect(err).To(HaveOccurred())
 
 			// Verify the resource still exists and status was updated
@@ -102,14 +104,13 @@ var _ = Describe("N8nWorkflow Controller", func() {
 		})
 
 		It("should add finalizer on first reconcile", func() {
-			By("Setting up reconciler with API key")
+			By("Setting up reconciler with operator namespace")
 			fakeRecorder := record.NewFakeRecorder(10)
 			controllerReconciler := &N8nWorkflowReconciler{
-				Client:           k8sClient,
-				Scheme:           k8sClient.Scheme(),
-				Recorder:         fakeRecorder,
-				DefaultN8nAPIKey: "test-api-key",
-				DefaultN8nURL:    "http://localhost:5678",
+				Client:            k8sClient,
+				Scheme:            k8sClient.Scheme(),
+				Recorder:          fakeRecorder,
+				OperatorNamespace: "default",
 			}
 
 			By("Running first reconcile")
@@ -117,7 +118,7 @@ var _ = Describe("N8nWorkflow Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 
-			// First reconcile adds finalizer and requeues
+			// First reconcile adds finalizer and requeues (may fail due to missing N8nInstance)
 			if err == nil && result.Requeue {
 				// Verify finalizer was added
 				resource := &n8nv1alpha1.N8nWorkflow{}

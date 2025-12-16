@@ -6,6 +6,9 @@ metadata:
   name: simple-webhook
   namespace: n8n
 spec:
+  # Reference to the N8nInstance (by name, in operator namespace)
+  instanceRef: default
+
   active: true
   workflow:
     name: "Simple Webhook"

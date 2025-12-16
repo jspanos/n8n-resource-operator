@@ -18,6 +18,9 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.instanceRef
+      name: Instance
+      type: string
     - jsonPath: .spec.workflow.name
       name: Workflow Name
       type: string
@@ -30,9 +33,6 @@ spec:
     - jsonPath: .status.workflowId
       name: Workflow ID
       type: string
-    - jsonPath: .status.lastSyncTime
-      name: Last Sync
-      type: date
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -65,42 +65,12 @@ spec:
                 default: true
                 description: Whether the workflow should be active
                 type: boolean
-              n8nRef:
-                description: Reference to the n8n instance to sync to
-                properties:
-                  name:
-                    default: n8n-service
-                    description: Name of the n8n service (used to construct URL if
-                      URL is not specified)
-                    type: string
-                  namespace:
-                    description: Namespace of the n8n service. Defaults to the workflow's
-                      namespace.
-                    type: string
-                  port:
-                    default: 5678
-                    description: Port of the n8n service
-                    type: integer
-                  secretRef:
-                    description: SecretRef references a secret containing the n8n
-                      API key
-                    properties:
-                      key:
-                        default: api-key
-                        description: Key in the secret to use
-                        type: string
-                      name:
-                        description: Name of the secret
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  url:
-                    description: |-
-                      URL is the full base URL of the n8n instance API (e.g., "http://n8n.example.com:5678")
-                      If specified, this takes precedence over Name/Namespace/Port
-                    type: string
-                type: object
+              instanceRef:
+                description: |-
+                  InstanceRef references an N8nInstance by name
+                  The N8nInstance must exist in the operator namespace
+                minLength: 1
+                type: string
               syncPolicy:
                 default: Always
                 description: |-
@@ -147,6 +117,7 @@ spec:
                 - name
                 type: object
             required:
+            - instanceRef
             - workflow
             type: object
           status:

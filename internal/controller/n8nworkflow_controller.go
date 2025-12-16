@@ -22,7 +22,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -59,14 +58,14 @@ type N8nWorkflowReconciler struct {
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 
-	// Default n8n configuration (can be overridden per-workflow)
-	DefaultN8nURL    string
-	DefaultN8nAPIKey string
+	// OperatorNamespace is the namespace where N8nInstance resources live
+	OperatorNamespace string
 }
 
 // +kubebuilder:rbac:groups=n8n.slys.dev,resources=n8nworkflows,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=n8n.slys.dev,resources=n8nworkflows/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=n8n.slys.dev,resources=n8nworkflows/finalizers,verbs=update
+// +kubebuilder:rbac:groups=n8n.slys.dev,resources=n8ninstances,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
@@ -117,81 +116,54 @@ func (r *N8nWorkflowReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return r.reconcileWorkflow(ctx, workflow, n8nClient)
 }
 
-// getN8nClient creates an n8n API client for the workflow
+// getN8nClient creates an n8n API client by looking up the referenced N8nInstance
 func (r *N8nWorkflowReconciler) getN8nClient(ctx context.Context, workflow *n8nv1alpha1.N8nWorkflow) (*n8n.Client, error) {
-	var baseURL, apiKey string
-
-	// Determine n8n URL
-	if workflow.Spec.N8nRef != nil {
-		// Use explicit URL if specified (takes precedence)
-		if workflow.Spec.N8nRef.URL != "" {
-			baseURL = workflow.Spec.N8nRef.URL
-		} else {
-			// Construct URL from service reference
-			namespace := workflow.Spec.N8nRef.Namespace
-			if namespace == "" {
-				namespace = workflow.Namespace
-			}
-			name := workflow.Spec.N8nRef.Name
-			if name == "" {
-				name = "n8n-service"
-			}
-			port := workflow.Spec.N8nRef.Port
-			if port == 0 {
-				port = 5678
-			}
-			baseURL = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, namespace, port)
-		}
-
-		// Get API key from secret if specified
-		if workflow.Spec.N8nRef.SecretRef != nil {
-			secretNamespace := workflow.Spec.N8nRef.Namespace
-			if secretNamespace == "" {
-				secretNamespace = workflow.Namespace
-			}
-			secret := &corev1.Secret{}
-			secretKey := types.NamespacedName{
-				Name:      workflow.Spec.N8nRef.SecretRef.Name,
-				Namespace: secretNamespace,
-			}
-			if err := r.Get(ctx, secretKey, secret); err != nil {
-				return nil, fmt.Errorf("failed to get API key secret: %w", err)
-			}
-			key := workflow.Spec.N8nRef.SecretRef.Key
-			if key == "" {
-				key = "api-key"
-			}
-			apiKeyBytes, ok := secret.Data[key]
-			if !ok {
-				return nil, fmt.Errorf("secret %s does not contain key %s", secretKey, key)
-			}
-			apiKey = string(apiKeyBytes)
-		}
+	// instanceRef is required
+	if workflow.Spec.InstanceRef == "" {
+		return nil, fmt.Errorf("instanceRef is required")
 	}
 
-	// Fall back to defaults from environment/config
+	// Look up the N8nInstance in the operator namespace
+	instance := &n8nv1alpha1.N8nInstance{}
+	instanceKey := types.NamespacedName{
+		Name:      workflow.Spec.InstanceRef,
+		Namespace: r.OperatorNamespace,
+	}
+	if err := r.Get(ctx, instanceKey, instance); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("N8nInstance %q not found in namespace %q", workflow.Spec.InstanceRef, r.OperatorNamespace)
+		}
+		return nil, fmt.Errorf("failed to get N8nInstance %q: %w", workflow.Spec.InstanceRef, err)
+	}
+
+	// Check if instance is ready
+	if !instance.Status.Ready {
+		return nil, fmt.Errorf("N8nInstance %q is not ready", workflow.Spec.InstanceRef)
+	}
+
+	// Get the resolved URL
+	baseURL := instance.GetResolvedURL()
 	if baseURL == "" {
-		baseURL = r.DefaultN8nURL
-		if baseURL == "" {
-			baseURL = os.Getenv("N8N_API_URL")
-		}
-	}
-	if apiKey == "" {
-		apiKey = r.DefaultN8nAPIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("N8N_API_KEY")
-		}
+		return nil, fmt.Errorf("N8nInstance %q has no URL configured", workflow.Spec.InstanceRef)
 	}
 
-	// Validate required configuration
-	if baseURL == "" {
-		return nil, fmt.Errorf("no n8n URL configured: specify n8nRef.url, n8nRef.name/namespace/port, or set N8N_API_URL environment variable")
+	// Get API key from secret (secret must be in operator namespace)
+	secret := &corev1.Secret{}
+	secretKey := types.NamespacedName{
+		Name:      instance.Spec.Credentials.SecretName,
+		Namespace: r.OperatorNamespace,
 	}
-	if apiKey == "" {
-		return nil, fmt.Errorf("no n8n API key configured: specify n8nRef.secretRef or set N8N_API_KEY environment variable")
+	if err := r.Get(ctx, secretKey, secret); err != nil {
+		return nil, fmt.Errorf("failed to get API key secret %q: %w", secretKey, err)
 	}
 
-	return n8n.NewClient(baseURL, apiKey), nil
+	key := instance.GetSecretKey()
+	apiKeyBytes, ok := secret.Data[key]
+	if !ok {
+		return nil, fmt.Errorf("secret %q does not contain key %q", secretKey, key)
+	}
+
+	return n8n.NewClient(baseURL, string(apiKeyBytes)), nil
 }
 
 // reconcileWorkflow syncs the workflow to n8n

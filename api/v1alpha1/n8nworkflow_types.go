@@ -39,43 +39,6 @@ const (
 	SyncPolicyManual SyncPolicy = "Manual"
 )
 
-// N8nRef references the n8n instance to sync workflows to
-type N8nRef struct {
-	// URL is the full base URL of the n8n instance API (e.g., "http://n8n.example.com:5678")
-	// If specified, this takes precedence over Name/Namespace/Port
-	// +optional
-	URL string `json:"url,omitempty"`
-
-	// Name of the n8n service (used to construct URL if URL is not specified)
-	// +kubebuilder:default=n8n-service
-	// +optional
-	Name string `json:"name,omitempty"`
-
-	// Namespace of the n8n service. Defaults to the workflow's namespace.
-	// +optional
-	Namespace string `json:"namespace,omitempty"`
-
-	// Port of the n8n service
-	// +kubebuilder:default=5678
-	// +optional
-	Port int `json:"port,omitempty"`
-
-	// SecretRef references a secret containing the n8n API key
-	// +optional
-	SecretRef *SecretKeyRef `json:"secretRef,omitempty"`
-}
-
-// SecretKeyRef references a key in a Secret
-type SecretKeyRef struct {
-	// Name of the secret
-	Name string `json:"name"`
-
-	// Key in the secret to use
-	// +kubebuilder:default=api-key
-	// +optional
-	Key string `json:"key,omitempty"`
-}
-
 // WorkflowSpec defines the n8n workflow specification
 type WorkflowSpec struct {
 	// Name of the workflow (must be unique in n8n)
@@ -110,9 +73,11 @@ type WorkflowSpec struct {
 
 // N8nWorkflowSpec defines the desired state of N8nWorkflow
 type N8nWorkflowSpec struct {
-	// Reference to the n8n instance to sync to
-	// +optional
-	N8nRef *N8nRef `json:"n8nRef,omitempty"`
+	// InstanceRef references an N8nInstance by name
+	// The N8nInstance must exist in the operator namespace
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	InstanceRef string `json:"instanceRef"`
 
 	// SyncPolicy defines how the operator handles synchronization with n8n
 	// - Always: Continuously sync, overwriting UI changes (default)
@@ -189,11 +154,11 @@ const (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=n8nwf;wf
+// +kubebuilder:printcolumn:name="Instance",type=string,JSONPath=`.spec.instanceRef`
 // +kubebuilder:printcolumn:name="Workflow Name",type=string,JSONPath=`.spec.workflow.name`
 // +kubebuilder:printcolumn:name="Active",type=boolean,JSONPath=`.status.active`
 // +kubebuilder:printcolumn:name="Sync Policy",type=string,JSONPath=`.spec.syncPolicy`
 // +kubebuilder:printcolumn:name="Workflow ID",type=string,JSONPath=`.status.workflowId`
-// +kubebuilder:printcolumn:name="Last Sync",type=date,JSONPath=`.status.lastSyncTime`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // N8nWorkflow is the Schema for the n8nworkflows API

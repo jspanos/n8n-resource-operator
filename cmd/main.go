@@ -61,6 +61,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var operatorNamespace string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -68,6 +69,9 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(&operatorNamespace, "operator-namespace", "",
+		"The namespace where N8nInstance resources and secrets are stored. "+
+			"Defaults to POD_NAMESPACE environment variable.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
@@ -86,6 +90,16 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Determine operator namespace
+	if operatorNamespace == "" {
+		operatorNamespace = os.Getenv("POD_NAMESPACE")
+	}
+	if operatorNamespace == "" {
+		setupLog.Error(nil, "operator namespace not configured: use --operator-namespace flag or set POD_NAMESPACE environment variable")
+		os.Exit(1)
+	}
+	setupLog.Info("Using operator namespace", "namespace", operatorNamespace)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -178,10 +192,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.N8nWorkflowReconciler{
+	if err := (&controller.N8nInstanceReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("n8nworkflow-controller"),
+		Recorder: mgr.GetEventRecorderFor("n8ninstance-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "N8nInstance")
+		os.Exit(1)
+	}
+
+	if err := (&controller.N8nWorkflowReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("n8nworkflow-controller"),
+		OperatorNamespace: operatorNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "N8nWorkflow")
 		os.Exit(1)

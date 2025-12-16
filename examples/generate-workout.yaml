@@ -8,10 +8,8 @@ metadata:
   labels:
     app: gym-track
 spec:
-  # Reference to n8n instance
-  n8nRef:
-    name: n8n-service
-    namespace: n8n
+  # Reference to the N8nInstance (by name, in operator namespace)
+  instanceRef: default
 
   # Workflow should be active
   active: true

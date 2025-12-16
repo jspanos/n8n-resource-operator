@@ -2,8 +2,8 @@ apiVersion: v2
 name: n8n-resource-operator
 description: A Kubernetes operator for declaratively managing n8n resources (workflows, credentials) using CRDs
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.3.0
+appVersion: "0.3.0"
 keywords:
   - n8n
   - workflow

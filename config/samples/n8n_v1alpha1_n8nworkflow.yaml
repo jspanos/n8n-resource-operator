@@ -7,20 +7,8 @@ metadata:
   name: simple-webhook
   namespace: n8n
 spec:
-  # n8n instance configuration (choose one approach)
-  n8nRef:
-    # Option 1: Direct URL (recommended for external n8n instances)
-    # url: "https://n8n.example.com"
-
-    # Option 2: Kubernetes service discovery
-    name: n8n-service
-    namespace: n8n
-    port: 5678
-
-    # API key secret reference (required)
-    secretRef:
-      name: n8n-api-key
-      key: api-key
+  # Reference to the N8nInstance (by name, in operator namespace)
+  instanceRef: default
 
   # Sync policy controls how the operator handles changes
   # - Always: Continuously sync, overwriting UI changes (default)
