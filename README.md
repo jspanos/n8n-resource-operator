@@ -212,6 +212,46 @@ spec:
     # ...
 ```
 
+### Force Sync Annotation
+
+When using `CreateOnly` or `Manual` sync policies, you may need to manually trigger a sync to push changes from Git to n8n, or to recover from a drifted state. Use the `n8n.slys.dev/force-sync` annotation:
+
+```bash
+# Trigger a one-time sync for a workflow
+kubectl annotate n8nworkflow my-workflow -n n8n n8n.slys.dev/force-sync=true
+```
+
+The annotation is automatically removed after a successful sync. This is useful for:
+
+- **Recovering from drift**: When the n8n UI version has diverged from Git and you want to restore the Git version
+- **Initial deployment fixes**: When `CreateOnly` workflows need a correction after initial deployment
+- **Manual promotion**: When using `Manual` policy and you're ready to push a specific version
+
+**Example: Force sync via kubectl patch**
+
+```bash
+kubectl patch n8nworkflow my-workflow -n n8n \
+  --type merge -p '{"metadata":{"annotations":{"n8n.slys.dev/force-sync":"true"}}}'
+```
+
+**Example: Force sync in YAML (GitOps)**
+
+```yaml
+apiVersion: n8n.slys.dev/v1alpha1
+kind: N8nWorkflow
+metadata:
+  name: my-workflow
+  namespace: n8n
+  annotations:
+    n8n.slys.dev/force-sync: "true"  # Will sync once and be removed
+spec:
+  instanceRef: default
+  syncPolicy: CreateOnly
+  # ...
+```
+
+> **Note:** The annotation value can be anything (e.g., `"true"`, a timestamp, a reason). The operator only checks for the presence of the annotation key.
+
 ### Status Fields
 
 **N8nInstance Status:**

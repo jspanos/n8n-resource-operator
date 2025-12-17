@@ -45,6 +45,10 @@ const (
 	// finalizerName is the finalizer used to clean up workflows in n8n
 	finalizerName = "n8n.slys.dev/workflow-cleanup"
 
+	// forceSyncAnnotation triggers a one-time sync even for CreateOnly/Manual policies
+	// After sync completes, the annotation is removed
+	forceSyncAnnotation = "n8n.slys.dev/force-sync"
+
 	// Default requeue interval for periodic reconciliation
 	defaultRequeueInterval = 5 * time.Minute
 
@@ -170,14 +174,23 @@ func (r *N8nWorkflowReconciler) getN8nClient(ctx context.Context, workflow *n8nv
 func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow *n8nv1alpha1.N8nWorkflow, n8nClient *n8n.Client) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
+	// Check for force-sync annotation
+	forceSync := false
+	if workflow.Annotations != nil {
+		if _, exists := workflow.Annotations[forceSyncAnnotation]; exists {
+			forceSync = true
+			log.Info("Force sync annotation detected, will sync regardless of policy")
+		}
+	}
+
 	// Get effective sync policy (default to Always)
 	syncPolicy := workflow.Spec.SyncPolicy
 	if syncPolicy == "" {
 		syncPolicy = n8nv1alpha1.SyncPolicyAlways
 	}
 
-	// Handle Manual sync policy - skip all sync operations
-	if syncPolicy == n8nv1alpha1.SyncPolicyManual {
+	// Handle Manual sync policy - skip all sync operations unless force-sync is set
+	if syncPolicy == n8nv1alpha1.SyncPolicyManual && !forceSync {
 		log.V(1).Info("SyncPolicy is Manual, skipping reconciliation")
 		r.setCondition(workflow, n8nv1alpha1.ConditionTypeReady, metav1.ConditionTrue,
 			"SyncPaused", "Sync is paused (syncPolicy: Manual)")
@@ -251,14 +264,18 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 		// Workflow exists - check sync policy before updating
 		workflow.Status.WorkflowID = existingWorkflow.ID
 
-		if syncPolicy == n8nv1alpha1.SyncPolicyCreateOnly {
+		if syncPolicy == n8nv1alpha1.SyncPolicyCreateOnly && !forceSync {
 			// CreateOnly: Don't update, just track the workflow
 			log.V(1).Info("SyncPolicy is CreateOnly, skipping update", "id", existingWorkflow.ID)
 			workflow.Status.SpecHash = currentSpecHash
 		} else {
-			// Always: Update only if spec changed
-			if specChanged {
-				log.Info("Spec changed, updating workflow in n8n", "id", existingWorkflow.ID, "name", workflow.Spec.Workflow.Name)
+			// Always (or force-sync): Update only if spec changed or forceSync is set
+			if specChanged || forceSync {
+				if forceSync {
+					log.Info("Force sync requested, updating workflow in n8n", "id", existingWorkflow.ID, "name", workflow.Spec.Workflow.Name)
+				} else {
+					log.Info("Spec changed, updating workflow in n8n", "id", existingWorkflow.ID, "name", workflow.Spec.Workflow.Name)
+				}
 				updated, err := n8nClient.UpdateWorkflow(ctx, existingWorkflow.ID, n8nWorkflow)
 				if err != nil {
 					log.Error(err, "Failed to update workflow")
@@ -270,7 +287,11 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 					}
 					return ctrl.Result{RequeueAfter: errorRequeueInterval}, err
 				}
-				r.Recorder.Event(workflow, corev1.EventTypeNormal, "Updated", "Workflow updated successfully")
+				if forceSync {
+					r.Recorder.Event(workflow, corev1.EventTypeNormal, "ForceSynced", "Workflow force-synced successfully")
+				} else {
+					r.Recorder.Event(workflow, corev1.EventTypeNormal, "Updated", "Workflow updated successfully")
+				}
 				workflow.Status.SpecHash = currentSpecHash
 				existingWorkflow = updated
 			} else {
@@ -332,6 +353,24 @@ func (r *N8nWorkflowReconciler) reconcileWorkflow(ctx context.Context, workflow 
 	if err := r.Status().Update(ctx, workflow); err != nil {
 		log.Error(err, "Failed to update status")
 		return ctrl.Result{}, err
+	}
+
+	// Remove force-sync annotation after successful sync
+	if forceSync {
+		log.Info("Removing force-sync annotation after successful sync")
+		// Re-fetch the workflow to get the latest version before patching
+		if err := r.Get(ctx, types.NamespacedName{Name: workflow.Name, Namespace: workflow.Namespace}, workflow); err != nil {
+			log.Error(err, "Failed to re-fetch workflow for annotation removal")
+			return ctrl.Result{Requeue: true}, nil
+		}
+		if workflow.Annotations != nil {
+			delete(workflow.Annotations, forceSyncAnnotation)
+			if err := r.Update(ctx, workflow); err != nil {
+				log.Error(err, "Failed to remove force-sync annotation")
+				// Don't fail reconciliation, annotation will be removed on next cycle
+				return ctrl.Result{Requeue: true}, nil
+			}
+		}
 	}
 
 	log.V(1).Info("Reconciliation complete", "workflowId", workflow.Status.WorkflowID, "active", workflow.Status.Active)
